@@ -1,0 +1,52 @@
+name: ci-cd pipeline
+
+# se ejecuta cuando hago push a la rama deploy
+on:
+  push:
+    branches:
+      - deploy
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # paso 1 - bajar el codigo
+      - name: checkout
+        uses: actions/checkout@v4
+
+      # paso 2 - hacer login en dockerhub
+      - name: login dockerhub
+        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+      # paso 3 - construir la imagen
+      - name: build imagen
+        run: docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/front-eval2:latest .
+
+      # paso 4 - subir la imagen a dockerhub
+      - name: push imagen
+        run: docker push ${{ secrets.DOCKERHUB_USERNAME }}/front-eval2:latest
+
+      # paso 5 - conectarse a la ec2 y actualizar el contenedor
+      - name: deploy en ec2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            # bajar la imagen nueva
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/front-eval2:latest
+
+            # parar el contenedor viejo si esta corriendo
+            docker stop front-eval2 || true
+            docker rm front-eval2 || true
+
+            # correr el contenedor nuevo
+            docker run -d \
+              --name front-eval2 \
+              --restart always \
+              -p 5000:5000 \
+              -e BACKEND_URL=${{ secrets.BACKEND_URL }} \
+              -e SECRET_KEY=${{ secrets.SECRET_KEY }} \
+              ${{ secrets.DOCKERHUB_USERNAME }}/front-eval2:latest
