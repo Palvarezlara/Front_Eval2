@@ -4,7 +4,7 @@ name: ci-cd pipeline
 on:
   push:
     branches:
-      - develop
+      - deploy
 
 jobs:
   build-and-deploy:
@@ -38,21 +38,15 @@ jobs:
             # bajar la imagen nueva
             docker pull ${{ secrets.DOCKERHUB_USERNAME }}/front-eval2:latest
 
-            # eliminar el contenedor viejo sin importar su estado
-            docker rm -f front-eval2 || true
-
-            # limpiar el puerto 5000 si otro contenedor lo ocupa
-            docker ps -q --filter publish=5000 | xargs -r docker rm -f
-
-            # sanitizar variables que pueden traer newlines desde los secrets
-            BACKEND_URL=$(printf '%s' '${{ secrets.BACKEND_URL }}' | tr -d '\r\n')
-            SECRET_KEY=$(printf '%s' '${{ secrets.SECRET_KEY }}' | tr -d '\r\n')
+            # parar el contenedor viejo si esta corriendo
+            docker stop front-eval2 || true
+            docker rm front-eval2 || true
 
             # correr el contenedor nuevo
             docker run -d \
               --name front-eval2 \
               --restart always \
               -p 5000:5000 \
-              -e BACKEND_URL="$BACKEND_URL" \
-              -e SECRET_KEY="$SECRET_KEY" \
+              -e BACKEND_URL=${{ secrets.BACKEND_URL }} \
+              -e SECRET_KEY=${{ secrets.SECRET_KEY }} \
               ${{ secrets.DOCKERHUB_USERNAME }}/front-eval2:latest
